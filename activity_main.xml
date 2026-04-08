@@ -1,56 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp"
-    tools:context=".MainActivity">
+    android:padding="20dp"
+    android:background="#F5F5F5">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="OMR Grading App"
+        android:text="MCQ Scanner &amp; Grader"
         android:textSize="24sp"
         android:textStyle="bold"
-        android:layout_gravity="center_horizontal" />
-
-    <Space
-        android:layout_width="match_parent"
-        android:layout_height="24dp" />
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="30dp" />
 
     <Button
         android:id="@+id/btnLoadKey"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="1. Load Answer Key (.json)"
-        android:padding="12dp" />
+        android:layout_height="60dp"
+        android:text="Upload Answer Key (JSON)"
+        android:layout_marginBottom="10dp" />
 
     <Button
         android:id="@+id/btnScanSheet"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="2. Scan Sheet with Camera"
-        android:padding="12dp" />
+        android:layout_height="60dp"
+        android:text="Scan Marking Key"
+        android:backgroundTint="#4CAF50"
+        android:textColor="#FFFFFF" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Results:"
-        android:textSize="18sp"
+        android:text="Status &amp; Results:"
         android:textStyle="bold"
-        android:layout_marginTop="24dp"/>
+        android:layout_marginTop="30dp" />
 
-    <TextView
-        android:id="@+id/tvResults"
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:background="#ECECEC"
-        android:padding="10dp"
-        android:text="Please load an answer key and scan a sheet."
-        android:textSize="16sp" />
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="10dp"
+        android:background="#FFFFFF"
+        android:padding="10dp">
+
+        <TextView
+            android:id="@+id/tvResults"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="No data loaded."
+            android:textSize="16sp"
+            android:fontFamily="monospace" />
+    </ScrollView>
 
 </LinearLayout>
