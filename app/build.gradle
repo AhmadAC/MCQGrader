@@ -1,0 +1,15 @@
+dependencies {
+    // ML Kit for Text Recognition (OCR)
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.0'
+
+    // CameraX for taking pictures
+    def camerax_version = "1.2.3"
+    implementation "androidx.camera:camera-core:${camerax_version}"
+    implementation "androidx.camera:camera-camera2:${camerax_version}"
+    implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+    implementation "androidx.camera:camera-view:${camerax_version}"
+
+    // Note: For OpenCV, you will need to download the OpenCV Android SDK 
+    // from opencv.org and import it as a module in Android Studio.
+    implementation project(path: ':opencv')
+}
