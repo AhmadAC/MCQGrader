@@ -23,6 +23,16 @@
         android:layout_marginBottom="10dp" />
 
     <Button
+        android:id="@+id/btnClearKey"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="Clear Answer Key"
+        android:backgroundTint="#D32F2F"
+        android:textColor="#FFFFFF"
+        android:visibility="gone"
+        android:layout_marginBottom="10dp" />
+
+    <Button
         android:id="@+id/btnScanSheet"
         android:layout_width="match_parent"
         android:layout_height="60dp"
