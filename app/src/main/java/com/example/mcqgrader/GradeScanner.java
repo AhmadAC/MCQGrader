@@ -29,8 +29,17 @@ public class GradeScanner {
         Mat blurred = new Mat();
         Mat thresh = new Mat();
 
-        // BitmapToMat results in RGBA
-        Imgproc.cvtColor(img, gray, Imgproc.COLOR_RGBA2GRAY);
+        // Safely convert depending on channel type (1 for real-time YUV Y-plane, 3/4 for Bitmaps)
+        if (img.channels() == 1) {
+            img.copyTo(gray);
+        } else if (img.channels() == 3) {
+            Imgproc.cvtColor(img, gray, Imgproc.COLOR_RGB2GRAY);
+        } else if (img.channels() == 4) {
+            Imgproc.cvtColor(img, gray, Imgproc.COLOR_RGBA2GRAY);
+        } else {
+            return new ScanResult(0, new HashMap<>());
+        }
+
         Imgproc.GaussianBlur(gray, blurred, new Size(5, 5), 0);
         Imgproc.threshold(blurred, thresh, 0, 255, Imgproc.THRESH_BINARY_INV | Imgproc.THRESH_OTSU);
 
