@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.util.Log;
+import android.util.Size;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
@@ -44,8 +45,6 @@ public class ScannerActivity extends AppCompatActivity {
 
         previewView = findViewById(R.id.previewView);
         tvScoreOverlay = findViewById(R.id.tvScoreOverlay);
-        
-        // Red Size 20 Bold styling
         tvScoreOverlay.setTextColor(Color.RED);
         tvScoreOverlay.setTextSize(20);
         tvScoreOverlay.setTypeface(null, Typeface.BOLD);
@@ -53,9 +52,8 @@ public class ScannerActivity extends AppCompatActivity {
         gradeScanner = new GradeScanner();
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        String keyJson = getIntent().getStringExtra("key_json");
+        parseKey(getIntent().getStringExtra("key_json"));
         optionsCount = getIntent().getIntExtra("options_count", 6);
-        parseKey(keyJson);
 
         startCamera();
 
@@ -76,9 +74,7 @@ public class ScannerActivity extends AppCompatActivity {
                 String k = keys.next();
                 answerKey.put(Integer.parseInt(k), obj.getInt(k));
             }
-        } catch (Exception e) {
-            Log.e("Scanner", "Key Parse Error", e);
-        }
+        } catch (Exception ignored) {}
     }
 
     private void startCamera() {
@@ -88,13 +84,14 @@ public class ScannerActivity extends AppCompatActivity {
                 ProcessCameraProvider provider = future.get();
                 Preview preview = new Preview.Builder().build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
-                
+
+                // INCREASED RESOLUTION FOR BETTER DETECTION
                 ImageAnalysis analysis = new ImageAnalysis.Builder()
+                        .setTargetResolution(new Size(1280, 720))
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
-                
+
                 analysis.setAnalyzer(cameraExecutor, this::processFrame);
-                
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
             } catch (Exception ignored) {}
         }, ContextCompat.getMainExecutor(this));
@@ -128,7 +125,13 @@ public class ScannerActivity extends AppCompatActivity {
             tvScoreOverlay.setText(result.score + " / " + answerKey.size());
             if (result.score >= bestScore) {
                 bestScore = result.score;
-                bestAnswers = new JSONObject(result.studentAnswers).toString();
+                try {
+                    JSONObject ansObj = new JSONObject();
+                    for (Map.Entry<Integer, Integer> entry : result.studentAnswers.entrySet()) {
+                        ansObj.put(String.valueOf(entry.getKey()), entry.getValue());
+                    }
+                    bestAnswers = ansObj.toString();
+                } catch (Exception e) { e.printStackTrace(); }
             }
         });
 
