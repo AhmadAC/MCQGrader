@@ -101,36 +101,30 @@ public class ScannerActivity extends AppCompatActivity {
     }
 
     private void processFrame(@NonNull ImageProxy image) {
-        // Safe conversion of CameraX Y-plane to OpenCV Mat
         ImageProxy.PlaneProxy plane = image.getPlanes()[0];
         ByteBuffer buffer = plane.getBuffer();
         byte[] data = new byte[buffer.remaining()];
         buffer.get(data);
 
-        Mat mat = new Mat(image.getHeight(), plane.getRowStride(), CvType.CV_8UC1);
-        mat.put(0, 0, data);
+        Mat matWithStride = new Mat(image.getHeight(), plane.getRowStride(), CvType.CV_8UC1);
+        matWithStride.put(0, 0, data);
 
-        // Remove stride padding if present
-        Mat croppedMat = new Mat();
+        // **CRASH FIX IS HERE**: We clone the submatrix to a new, compact Mat
+        // This prevents using memory that has been deallocated (use-after-free).
+        Mat mat;
         if (plane.getRowStride() != image.getWidth()) {
-            croppedMat = mat.submat(0, image.getHeight(), 0, image.getWidth());
+            mat = matWithStride.submat(0, image.getHeight(), 0, image.getWidth()).clone();
         } else {
-            croppedMat = mat.clone();
+            mat = matWithStride.clone();
         }
-        mat.release();
+        matWithStride.release(); // The original is now safe to release.
 
-        // Handle rotation correctly
         int rotation = image.getImageInfo().getRotationDegrees();
-        if (rotation == 90) {
-            Core.rotate(croppedMat, croppedMat, Core.ROTATE_90_CLOCKWISE);
-        } else if (rotation == 180) {
-            Core.rotate(croppedMat, croppedMat, Core.ROTATE_180);
-        } else if (rotation == 270) {
-            Core.rotate(croppedMat, croppedMat, Core.ROTATE_90_COUNTERCLOCKWISE);
-        }
-
-        // Run the grader
-        GradeScanner.ScanResult result = gradeScanner.grade(croppedMat, answerKey, optionsCount);
+        if (rotation == 90) Core.rotate(mat, mat, Core.ROTATE_90_CLOCKWISE);
+        else if (rotation == 180) Core.rotate(mat, mat, Core.ROTATE_180);
+        else if (rotation == 270) Core.rotate(mat, mat, Core.ROTATE_90_COUNTERCLOCKWISE);
+        
+        GradeScanner.ScanResult result = gradeScanner.grade(mat, answerKey, optionsCount);
 
         runOnUiThread(() -> {
             String scoreDisplay = result.score + " / " + answerKey.size();
@@ -142,7 +136,7 @@ public class ScannerActivity extends AppCompatActivity {
             }
         });
 
-        croppedMat.release();
+        mat.release();
         image.close();
     }
 

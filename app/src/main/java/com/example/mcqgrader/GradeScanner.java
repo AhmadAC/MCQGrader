@@ -146,12 +146,12 @@ public class GradeScanner {
     private Point[] orderPoints(List<Point> points) {
         Point[] ordered = new Point[4];
         points.sort(Comparator.comparingDouble(p -> p.x + p.y));
-        ordered[0] = points.get(0); // Top-Left
-        ordered[2] = points.get(3); // Bottom-Right
+        ordered[0] = points.get(0);
+        ordered[2] = points.get(3);
 
         points.sort(Comparator.comparingDouble(p -> p.x - p.y));
-        ordered[3] = points.get(0); // Bottom-Left
-        ordered[1] = points.get(3); // Top-Right
+        ordered[3] = points.get(0);
+        ordered[1] = points.get(3);
 
         return ordered;
     }

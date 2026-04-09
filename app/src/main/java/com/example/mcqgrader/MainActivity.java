@@ -149,7 +149,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void launchScanner() {
         Intent intent = new Intent(this, ScannerActivity.class);
-        // Pass the answer key to the scanner as a simple JSON string
         intent.putExtra("key_json", new JSONObject(currentAnswerKey).toString());
         intent.putExtra("options_count", currentOptionsCount);
         scannerLauncher.launch(intent);
@@ -191,7 +190,6 @@ public class MainActivity extends AppCompatActivity {
             root.put("score", score);
             root.put("total_questions", currentAnswerKey.size());
 
-            // Convert the student answers string back to a JSON object to embed
             if (answersJson != null && !answersJson.isEmpty()) {
                  JSONObject studentAnswers = new JSONObject(answersJson);
                  JSONObject formattedAnswers = new JSONObject();
