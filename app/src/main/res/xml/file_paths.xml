@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Maps to the getCacheDir() + "/camera_images" folder we defined in our Java code -->
+    <cache-path name="camera_images" path="camera_images/" />
+</paths>

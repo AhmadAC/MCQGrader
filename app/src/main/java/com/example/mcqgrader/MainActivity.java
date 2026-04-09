@@ -1,124 +1,129 @@
-package com.example.mcqgrader;
+package com.example.mcqgrader; // TODO: Replace with your exact package name from your project!
 
+import android.Manifest;
 import android.content.Intent;
-import android.graphics.Bitmap;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
-import android.util.Log;
 import android.widget.Button;
-import android.widget.TextView;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
-import org.json.JSONObject;
-import org.opencv.android.OpenCVLoader;
-import org.opencv.android.Utils;
-import org.opencv.core.Mat;
-
-import java.io.InputStream;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.io.File;
+import java.io.IOException;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TAG = "MainActivity";
+    private Uri photoUri;
+    // private ImageView imageView; // Uncomment if you are displaying the captured image
 
-    private TextView tvResults;
-    private Map<Integer, Integer> answerKey = new HashMap<>();
-    private Map<String, Integer> alphaMap = new HashMap<>();
+    // 1. Launcher for handling the Camera Permission request
+    private final ActivityResultLauncher<String> requestPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
+                if (isGranted) {
+                    // Permission was granted by the user, proceed to open the camera app
+                    launchCameraIntent();
+                } else {
+                    // Permission denied
+                    Toast.makeText(this, "Camera permission is required to scan the marking key", Toast.LENGTH_LONG).show();
+                }
+            });
 
-    private final ActivityResultLauncher<String> jsonPicker = registerForActivityResult(
-            new ActivityResultContracts.GetContent(), uri -> { if (uri != null) loadJson(uri); });
-
-    private final ActivityResultLauncher<Intent> cameraLauncher = registerForActivityResult(
-            new ActivityResultContracts.StartActivityForResult(), result -> {
-                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                    Bundle extras = result.getData().getExtras();
-                    if (extras != null) {
-                        Bitmap bitmap = (Bitmap) extras.get("data");
-                        if (bitmap != null) {
-                            processImage(bitmap);
-                        }
-                    }
+    // 2. Launcher for handling the photo result returned from the Camera App
+    private final ActivityResultLauncher<Intent> takePictureLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == RESULT_OK) {
+                    // The photo was taken successfully and saved to 'photoUri'
+                    Toast.makeText(this, "Marking key scanned successfully!", Toast.LENGTH_SHORT).show();
+                    
+                    // if (imageView != null) {
+                    //    imageView.setImageURI(photoUri);
+                    // }
+                    
+                    // TODO: Pass photoUri to your OpenCV or grading logic here
+                } else {
+                    Toast.makeText(this, "Camera action cancelled", Toast.LENGTH_SHORT).show();
                 }
             });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+        setContentView(R.layout.activity_main); // Make sure this matches your layout file
 
-        if (!OpenCVLoader.initDebug()) {
-            Log.e(TAG, "OpenCV initialization failed!");
+        // Replace 'R.id.scanButton' with the ID of your actual scanning button
+        Button scanButton = findViewById(R.id.scanButton); 
+        
+        scanButton.setOnClickListener(v -> scanMarkingKey());
+    }
+
+    /**
+     * Triggered when the user clicks the button to scan the marking key.
+     */
+    private void scanMarkingKey() {
+        // Check if we already have camera permission
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            launchCameraIntent();
         } else {
-            Log.d(TAG, "OpenCV initialized successfully!");
-        }
-
-        tvResults = findViewById(R.id.tvResults);
-        Button btnLoadKey = findViewById(R.id.btnLoadKey);
-        Button btnScan = findViewById(R.id.btnScanSheet);
-
-        // Map A-F to 0-5
-        String alpha = "ABCDEF";
-        for (int i = 0; i < alpha.length(); i++) {
-            alphaMap.put(String.valueOf(alpha.charAt(i)), i);
-        }
-
-        btnLoadKey.setOnClickListener(v -> jsonPicker.launch("application/json"));
-        btnScan.setOnClickListener(v -> {
-            if (answerKey.isEmpty()) {
-                Toast.makeText(this, "Please load an answer key JSON file first.", Toast.LENGTH_SHORT).show();
-            } else {
-                cameraLauncher.launch(new Intent(MediaStore.ACTION_IMAGE_CAPTURE));
-            }
-        });
-    }
-
-    private void loadJson(Uri uri) {
-        try (InputStream is = getContentResolver().openInputStream(uri)) {
-            byte[] buffer = new byte[is.available()];
-            is.read(buffer);
-            JSONObject json = new JSONObject(new String(buffer, "UTF-8")).getJSONObject("answers");
-            
-            answerKey.clear();
-            Iterator<String> keys = json.keys();
-            while (keys.hasNext()) {
-                String qNum = keys.next();
-                answerKey.put(Integer.parseInt(qNum), alphaMap.get(json.getString(qNum)));
-            }
-            tvResults.setText("Key Loaded: " + answerKey.size() + " Questions.");
-            Toast.makeText(this, "Answer key loaded!", Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load or parse JSON", e);
-            tvResults.setText("Error loading answer key: " + e.getMessage());
-            Toast.makeText(this, "Invalid JSON Format", Toast.LENGTH_SHORT).show();
+            // We don't have permission. This line triggers the popup dialog!
+            requestPermissionLauncher.launch(Manifest.permission.CAMERA);
         }
     }
 
-    private void processImage(Bitmap bitmap) {
-        // --- Step 1: Use TextScanner to find any text ---
-        new TextScanner().scan(bitmap, text -> {
-            // This is an asynchronous callback, the code inside here runs when text scanning is complete.
-            
-            // --- Step 2: Convert Bitmap to OpenCV Mat for grading ---
-            Mat imageMat = new Mat();
-            Bitmap bmp32 = bitmap.copy(Bitmap.Config.ARGB_8888, true);
-            Utils.bitmapToMat(bmp32, imageMat);
+    /**
+     * Creates a secure file URI and opens the system Camera app.
+     */
+    private void launchCameraIntent() {
+        Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
 
-            // --- Step 3: Use GradeScanner to get the score ---
-            int score = new GradeScanner().grade(imageMat, answerKey);
-            
-            // --- Step 4: Combine results and display them ---
-            String studentInfo = "Detected Text:\n" + text + "\n\n";
-            String finalResult = studentInfo + "Final Score: " + score + " / " + answerKey.size();
-            
-            // UI updates must be run on the main thread
-            runOnUiThread(() -> tvResults.setText(finalResult));
-        });
+        // Ensure there's a camera app available to handle the intent
+        if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
+            File photoFile = null;
+            try {
+                photoFile = createImageFile();
+            } catch (IOException ex) {
+                Toast.makeText(this, "Error creating file for the image", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Continue only if the File was successfully created
+            if (photoFile != null) {
+                // Use FileProvider to get a content:// URI instead of a file:// URI.
+                // This prevents the app from crashing with FileUriExposedException.
+                photoUri = FileProvider.getUriForFile(this,
+                        getApplicationContext().getPackageName() + ".fileprovider",
+                        photoFile);
+
+                takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
+                takePictureLauncher.launch(takePictureIntent);
+            }
+        } else {
+            Toast.makeText(this, "No Camera app found on this device", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * Creates a temporary file in the cache directory to store the scanned marking key.
+     */
+    private File createImageFile() throws IOException {
+        String imageFileName = "MARKING_KEY_";
+        File storageDir = new File(getCacheDir(), "camera_images");
+        
+        if (!storageDir.exists()) {
+            storageDir.mkdirs();
+        }
+        
+        return File.createTempFile(
+                imageFileName,  /* prefix */
+                ".jpg",         /* suffix */
+                storageDir      /* directory */
+        );
     }
 }
