@@ -1,4 +1,3 @@
-}
 package com.example.mcqgrader;
 
 import android.content.Intent;
@@ -21,7 +20,6 @@ import org.json.JSONObject;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.imgproc.Imgproc;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -46,6 +44,8 @@ public class ScannerActivity extends AppCompatActivity {
 
         previewView = findViewById(R.id.previewView);
         tvScoreOverlay = findViewById(R.id.tvScoreOverlay);
+        
+        // Red Size 20 Bold styling
         tvScoreOverlay.setTextColor(Color.RED);
         tvScoreOverlay.setTextSize(20);
         tvScoreOverlay.setTypeface(null, Typeface.BOLD);
@@ -53,8 +53,9 @@ public class ScannerActivity extends AppCompatActivity {
         gradeScanner = new GradeScanner();
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        parseKey(getIntent().getStringExtra("key_json"));
+        String keyJson = getIntent().getStringExtra("key_json");
         optionsCount = getIntent().getIntExtra("options_count", 6);
+        parseKey(keyJson);
 
         startCamera();
 
@@ -75,7 +76,9 @@ public class ScannerActivity extends AppCompatActivity {
                 String k = keys.next();
                 answerKey.put(Integer.parseInt(k), obj.getInt(k));
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            Log.e("Scanner", "Key Parse Error", e);
+        }
     }
 
     private void startCamera() {
@@ -85,10 +88,13 @@ public class ScannerActivity extends AppCompatActivity {
                 ProcessCameraProvider provider = future.get();
                 Preview preview = new Preview.Builder().build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
+                
                 ImageAnalysis analysis = new ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
+                
                 analysis.setAnalyzer(cameraExecutor, this::processFrame);
+                
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
             } catch (Exception ignored) {}
         }, ContextCompat.getMainExecutor(this));
