@@ -12,7 +12,6 @@ import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
-import android.widget.Button;
 import android.widget.TextView;
 import com.google.common.util.concurrent.ListenableFuture;
 import org.json.JSONObject;
@@ -27,15 +26,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class ScannerActivity extends AppCompatActivity {
-    private static final String TAG = "ScannerActivity";
     private PreviewView previewView;
     private TextView tvScoreOverlay;
     private ExecutorService cameraExecutor;
     private GradeScanner gradeScanner;
     private Map<Integer, Integer> answerKey = new HashMap<>();
     private int optionsCount;
-    private int bestScore = -1;
-    private String bestAnswersJson = "{}";
+    private int bestScore = 0;
+    private String bestAnswers = "{}";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,7 +42,11 @@ public class ScannerActivity extends AppCompatActivity {
 
         previewView = findViewById(R.id.previewView);
         tvScoreOverlay = findViewById(R.id.tvScoreOverlay);
-        Button btnFinish = findViewById(R.id.btnFinish);
+
+        // Styling requested: Red, Size 20, Bold
+        tvScoreOverlay.setTextColor(android.graphics.Color.RED);
+        tvScoreOverlay.setTextSize(20);
+        tvScoreOverlay.setTypeface(null, android.graphics.Typeface.BOLD);
 
         gradeScanner = new GradeScanner();
         cameraExecutor = Executors.newSingleThreadExecutor();
@@ -55,27 +57,24 @@ public class ScannerActivity extends AppCompatActivity {
 
         startCamera();
 
-        btnFinish.setOnClickListener(v -> {
+        findViewById(R.id.btnFinish).setOnClickListener(v -> {
             Intent intent = new Intent();
             intent.putExtra("score", bestScore);
-            intent.putExtra("answers", bestAnswersJson);
+            intent.putExtra("answers", bestAnswers);
             setResult(RESULT_OK, intent);
             finish();
         });
     }
 
-    private void parseKey(String jsonStr) {
+    private void parseKey(String json) {
         try {
-            if (jsonStr == null) return;
-            JSONObject obj = new JSONObject(jsonStr);
+            JSONObject obj = new JSONObject(json);
             Iterator<String> keys = obj.keys();
             while (keys.hasNext()) {
                 String k = keys.next();
                 answerKey.put(Integer.parseInt(k), obj.getInt(k));
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Key Parse Error", e);
-        }
+        } catch (Exception ignored) {}
     }
 
     private void startCamera() {
@@ -85,18 +84,12 @@ public class ScannerActivity extends AppCompatActivity {
                 ProcessCameraProvider provider = future.get();
                 Preview preview = new Preview.Builder().build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
-
                 ImageAnalysis analysis = new ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
-
                 analysis.setAnalyzer(cameraExecutor, this::processFrame);
-
-                provider.unbindAll();
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
-            } catch (Exception e) {
-                Log.e(TAG, "Camera Init Error", e);
-            }
+            } catch (Exception ignored) {}
         }, ContextCompat.getMainExecutor(this));
     }
 
@@ -109,30 +102,27 @@ public class ScannerActivity extends AppCompatActivity {
         Mat matWithStride = new Mat(image.getHeight(), plane.getRowStride(), CvType.CV_8UC1);
         matWithStride.put(0, 0, data);
 
-        // **CRASH FIX IS HERE**: We clone the submatrix to a new, compact Mat
-        // This prevents using memory that has been deallocated (use-after-free).
+        // Crash Fix: Clone to prevent use-after-free
         Mat mat;
         if (plane.getRowStride() != image.getWidth()) {
             mat = matWithStride.submat(0, image.getHeight(), 0, image.getWidth()).clone();
         } else {
             mat = matWithStride.clone();
         }
-        matWithStride.release(); // The original is now safe to release.
+        matWithStride.release();
 
         int rotation = image.getImageInfo().getRotationDegrees();
         if (rotation == 90) Core.rotate(mat, mat, Core.ROTATE_90_CLOCKWISE);
         else if (rotation == 180) Core.rotate(mat, mat, Core.ROTATE_180);
         else if (rotation == 270) Core.rotate(mat, mat, Core.ROTATE_90_COUNTERCLOCKWISE);
-        
+
         GradeScanner.ScanResult result = gradeScanner.grade(mat, answerKey, optionsCount);
 
         runOnUiThread(() -> {
-            String scoreDisplay = result.score + " / " + answerKey.size();
-            tvScoreOverlay.setText(scoreDisplay);
-
+            tvScoreOverlay.setText(result.score + " / " + answerKey.size());
             if (result.score >= bestScore) {
                 bestScore = result.score;
-                bestAnswersJson = new JSONObject(result.studentAnswers).toString();
+                bestAnswers = new JSONObject(result.studentAnswers).toString();
             }
         });
 

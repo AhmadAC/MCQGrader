@@ -44,7 +44,7 @@ public class MainActivity extends AppCompatActivity {
                 if (isGranted) {
                     launchScanner();
                 } else {
-                    Toast.makeText(this, "Camera permission is required to scan.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Camera permission is required.", Toast.LENGTH_SHORT).show();
                 }
             });
 
@@ -52,28 +52,30 @@ public class MainActivity extends AppCompatActivity {
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == RESULT_OK && result.getData() != null) {
                     int score = result.getData().getIntExtra("score", -1);
-                    if (score == -1) {
-                         tvResults.setText("Scanning was cancelled or no score was captured.");
-                         return;
-                    }
-
                     String answersJson = result.getData().getStringExtra("answers");
-                    String finalResultText = "Scan Complete!\nQuiz: " + currentQuizName +
-                                         "\nFinal Score: " + score + " / " + currentAnswerKey.size();
-                    tvResults.setText(finalResultText);
                     
+                    String summary = "Scan Complete!\nQuiz: " + currentQuizName +
+                                     "\nScore: " + score + " / " + currentAnswerKey.size();
+                    tvResults.setText(summary);
                     btnExportAnswers.setVisibility(View.VISIBLE);
-                    generateExportJson(score, answersJson);
+                    
+                    try {
+                        JSONObject root = new JSONObject();
+                        root.put("quiz_name", currentQuizName);
+                        root.put("score", score);
+                        root.put("total_questions", currentAnswerKey.size());
+                        if (answersJson != null) root.put("student_answers", new JSONObject(answersJson));
+                        lastExportJson = root.toString(4);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Export JSON Error", e);
+                    }
                 }
             });
 
     private final ActivityResultLauncher<Intent> filePickerLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                    Uri uri = result.getData().getData();
-                    if (uri != null) {
-                        loadJsonFromUri(uri);
-                    }
+                    loadJsonFromUri(result.getData().getData());
                 }
             });
 
@@ -81,13 +83,10 @@ public class MainActivity extends AppCompatActivity {
             registerForActivityResult(new ActivityResultContracts.CreateDocument("application/json"), uri -> {
                 if (uri != null && lastExportJson != null) {
                     try (OutputStream os = getContentResolver().openOutputStream(uri)) {
-                        if (os != null) {
-                            os.write(lastExportJson.getBytes());
-                            Toast.makeText(this, "Export successful!", Toast.LENGTH_LONG).show();
-                        }
+                        os.write(lastExportJson.getBytes());
+                        Toast.makeText(this, "Results Exported!", Toast.LENGTH_SHORT).show();
                     } catch (Exception e) {
-                        Log.e(TAG, "Failed to save export file", e);
-                        Toast.makeText(this, "Export failed.", Toast.LENGTH_SHORT).show();
+                        Log.e(TAG, "Save Error", e);
                     }
                 }
             });
@@ -97,9 +96,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        if (!OpenCVLoader.initDebug()) {
-            Log.e(TAG, "OpenCV initialization failed");
-        }
+        OpenCVLoader.initDebug();
 
         tvResults = findViewById(R.id.tvResults);
         btnExportAnswers = findViewById(R.id.btnExportAnswers);
@@ -107,9 +104,16 @@ public class MainActivity extends AppCompatActivity {
         Button btnScanSheet = findViewById(R.id.btnScanSheet);
         Button btnLoadKey = findViewById(R.id.btnLoadKey);
 
+        btnLoadKey.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.setType("*/*");
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            filePickerLauncher.launch(Intent.createChooser(intent, "Open with File Explorer..."));
+        });
+
         btnScanSheet.setOnClickListener(v -> {
             if (currentAnswerKey.isEmpty()) {
-                Toast.makeText(this, "Please load an answer key first.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Please load a key first.", Toast.LENGTH_SHORT).show();
                 return;
             }
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
@@ -119,39 +123,35 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        btnLoadKey.setOnClickListener(v -> {
-            // This intent forces a chooser, allowing you to select your preferred file explorer.
-            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-            intent.setType("*/*");
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            
-            Intent chooser = Intent.createChooser(intent, "Select Answer Key using...");
-            filePickerLauncher.launch(chooser);
-        });
-
         btnClearKey.setOnClickListener(v -> {
             currentAnswerKey.clear();
-            currentQuizName = "Unknown Quiz";
-            tvResults.setText("No data loaded.");
-            btnExportAnswers.setVisibility(View.GONE);
+            tvResults.setText("Answer key cleared.");
             btnClearKey.setVisibility(View.GONE);
-            Toast.makeText(this, "Answer Key cleared.", Toast.LENGTH_SHORT).show();
+            btnExportAnswers.setVisibility(View.GONE);
         });
 
         btnExportAnswers.setOnClickListener(v -> {
-             if (lastExportJson != null) {
-                jsonExportLauncher.launch(currentQuizName.replaceAll("\\s+", "_") + "_answers.json");
-            } else {
-                Toast.makeText(this, "No scan data to export.", Toast.LENGTH_SHORT).show();
-            }
+            jsonExportLauncher.launch(currentQuizName.replace(" ", "_") + "_results.json");
         });
     }
 
     private void launchScanner() {
-        Intent intent = new Intent(this, ScannerActivity.class);
-        intent.putExtra("key_json", new JSONObject(currentAnswerKey).toString());
-        intent.putExtra("options_count", currentOptionsCount);
-        scannerLauncher.launch(intent);
+        try {
+            Intent intent = new Intent(this, ScannerActivity.class);
+            
+            // CRASH FIX: Convert Integer keys to Strings manually
+            JSONObject keyObj = new JSONObject();
+            for (Map.Entry<Integer, Integer> entry : currentAnswerKey.entrySet()) {
+                keyObj.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            
+            intent.putExtra("key_json", keyObj.toString());
+            intent.putExtra("options_count", currentOptionsCount);
+            scannerLauncher.launch(intent);
+        } catch (Exception e) {
+            Log.e(TAG, "Launch Scanner Error", e);
+            Toast.makeText(this, "Error starting scanner.", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void loadJsonFromUri(Uri uri) {
@@ -162,9 +162,10 @@ public class MainActivity extends AppCompatActivity {
             while ((line = reader.readLine()) != null) sb.append(line);
 
             JSONObject json = new JSONObject(sb.toString());
-            currentQuizName = json.optString("quiz_name", "Unknown Quiz");
+            currentQuizName = json.optString("quiz_name", "Quiz");
             currentOptionsCount = json.optInt("options_count", 6);
             JSONObject answers = json.getJSONObject("answers");
+            
             currentAnswerKey.clear();
             Iterator<String> keys = answers.keys();
             while (keys.hasNext()) {
@@ -173,39 +174,10 @@ public class MainActivity extends AppCompatActivity {
                 int ansIndex = answers.getString(keyStr).toUpperCase().charAt(0) - 'A';
                 currentAnswerKey.put(qNum, ansIndex);
             }
-            String successMsg = "Loaded Key: '" + currentQuizName + "'\n(" + currentAnswerKey.size() + " Questions)";
-            tvResults.setText(successMsg);
+            tvResults.setText("Key Loaded: " + currentQuizName + "\nTotal: " + currentAnswerKey.size());
             btnClearKey.setVisibility(View.VISIBLE);
-            btnExportAnswers.setVisibility(View.GONE);
         } catch (Exception e) {
-            tvResults.setText("Error: Could not load or parse the JSON file.");
-            Log.e(TAG, "JSON Load Error", e);
-        }
-    }
-    
-    private void generateExportJson(int score, String answersJson) {
-         try {
-            JSONObject root = new JSONObject();
-            root.put("quiz_name", currentQuizName);
-            root.put("score", score);
-            root.put("total_questions", currentAnswerKey.size());
-
-            if (answersJson != null && !answersJson.isEmpty()) {
-                 JSONObject studentAnswers = new JSONObject(answersJson);
-                 JSONObject formattedAnswers = new JSONObject();
-                 Iterator<String> keys = studentAnswers.keys();
-                 while(keys.hasNext()) {
-                     String qNum = keys.next();
-                     int ansIndex = studentAnswers.getInt(qNum);
-                     String ansLetter = (ansIndex >= 0) ? String.valueOf((char)('A' + ansIndex)) : "N/A";
-                     formattedAnswers.put(qNum, ansLetter);
-                 }
-                 root.put("student_answers", formattedAnswers);
-            }
-            lastExportJson = root.toString(4);
-        } catch (Exception e) {
-            Log.e(TAG, "Error generating export JSON", e);
-            lastExportJson = null;
+            Toast.makeText(this, "Invalid JSON File", Toast.LENGTH_LONG).show();
         }
     }
 }
