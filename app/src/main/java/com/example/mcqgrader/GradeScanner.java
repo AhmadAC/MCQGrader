@@ -5,15 +5,25 @@ import org.opencv.imgproc.Imgproc;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class GradeScanner {
 
-    private static final int NUM_OPTIONS = 6; 
+    // Helper object to return both the score and the student's choices
+    public static class ScanResult {
+        public int score;
+        public Map<Integer, Integer> studentAnswers;
 
-    public int grade(Mat img, Map<Integer, Integer> key) {
-        if (img.empty()) return 0;
+        public ScanResult(int score, Map<Integer, Integer> studentAnswers) {
+            this.score = score;
+            this.studentAnswers = studentAnswers;
+        }
+    }
+
+    public ScanResult grade(Mat img, Map<Integer, Integer> key, int optionsCount) {
+        if (img.empty()) return new ScanResult(0, new HashMap<>());
 
         Mat gray = new Mat();
         Mat blurred = new Mat();
@@ -40,10 +50,13 @@ public class GradeScanner {
         Collections.sort(bubbles, Comparator.comparingInt(r -> r.y));
 
         int totalScore = 0;
-        for (int q = 0; q < key.size(); q++) {
-            if ((q * NUM_OPTIONS) + NUM_OPTIONS > bubbles.size()) break;
+        Map<Integer, Integer> studentAnswers = new HashMap<>();
 
-            List<Rect> row = new ArrayList<>(bubbles.subList(q * NUM_OPTIONS, (q * NUM_OPTIONS) + NUM_OPTIONS));
+        for (int q = 0; q < key.size(); q++) {
+            // Prevent out-of-bounds scanning if fewer bubbles exist
+            if ((q * optionsCount) + optionsCount > bubbles.size()) break;
+
+            List<Rect> row = new ArrayList<>(bubbles.subList(q * optionsCount, (q * optionsCount) + optionsCount));
             Collections.sort(row, Comparator.comparingInt(r -> r.x));
 
             int filledIndex = -1;
@@ -66,6 +79,10 @@ public class GradeScanner {
                 masked.release();
             }
 
+            // Save the student's detected bubble index
+            studentAnswers.put(q + 1, filledIndex);
+
+            // `key` expects keys exactly mimicking 1, 2, 3.. mapped to index 0, 1, 2..
             if (key.containsKey(q + 1) && filledIndex == key.get(q + 1)) {
                 totalScore++;
             }
@@ -75,6 +92,7 @@ public class GradeScanner {
         blurred.release();
         thresh.release();
         hierarchy.release();
-        return totalScore;
+        
+        return new ScanResult(totalScore, studentAnswers);
     }
 }

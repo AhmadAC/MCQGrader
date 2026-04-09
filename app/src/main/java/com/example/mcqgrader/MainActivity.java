@@ -12,6 +12,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.util.Log;
+import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -22,14 +23,19 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
+import org.json.JSONObject;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.Mat;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
@@ -37,7 +43,16 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MCQGrader_Main";
     private Uri photoUri;
     private TextView tvResults;
+    private Button btnExportAnswers;
     private GradeScanner gradeScanner;
+
+    // JSON Loaded Data
+    private Map<Integer, Integer> currentAnswerKey = new HashMap<>();
+    private int currentOptionsCount = 6;
+    private String currentQuizName = "Unknown Quiz";
+
+    // Store JSON dump of last scan
+    private String lastExportJson = null;
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
@@ -52,6 +67,28 @@ public class MainActivity extends AppCompatActivity {
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == RESULT_OK) {
                     processCapturedImage();
+                }
+            });
+
+    private final ActivityResultLauncher<String[]> jsonPickerLauncher =
+            registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
+                if (uri != null) {
+                    loadJsonFromUri(uri);
+                }
+            });
+
+    private final ActivityResultLauncher<String> jsonExportLauncher =
+            registerForActivityResult(new ActivityResultContracts.CreateDocument("application/json"), uri -> {
+                if (uri != null && lastExportJson != null) {
+                    try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                        if (os != null) {
+                            os.write(lastExportJson.getBytes());
+                            Toast.makeText(this, "Export successful!", Toast.LENGTH_LONG).show();
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to save export file", e);
+                        Toast.makeText(this, "Export failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    }
                 }
             });
 
@@ -72,6 +109,7 @@ public class MainActivity extends AppCompatActivity {
         tvResults = findViewById(R.id.tvResults);
         Button btnScanSheet = findViewById(R.id.btnScanSheet); 
         Button btnLoadKey = findViewById(R.id.btnLoadKey);
+        btnExportAnswers = findViewById(R.id.btnExportAnswers);
         
         btnScanSheet.setOnClickListener(v -> {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
@@ -81,7 +119,60 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        btnLoadKey.setOnClickListener(v -> Toast.makeText(this, "JSON Loader not yet implemented", Toast.LENGTH_SHORT).show());
+        // Trigger file picker for JSON files
+        btnLoadKey.setOnClickListener(v -> jsonPickerLauncher.launch(new String[]{"*/*"}));
+
+        // Trigger file saver for student answers
+        btnExportAnswers.setOnClickListener(v -> {
+            if (lastExportJson != null) {
+                jsonExportLauncher.launch("student_answers.json");
+            } else {
+                Toast.makeText(this, "No scan data available to export.", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void loadJsonFromUri(Uri uri) {
+        try (InputStream is = getContentResolver().openInputStream(uri);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line);
+            }
+
+            JSONObject json = new JSONObject(sb.toString());
+            currentQuizName = json.optString("quiz_name", "Unknown Quiz");
+            currentOptionsCount = json.optInt("options_count", 6);
+
+            JSONObject answers = json.getJSONObject("answers");
+            currentAnswerKey.clear();
+
+            // Iterate dynamically through keys
+            Iterator<String> keys = answers.keys();
+            while (keys.hasNext()) {
+                String keyStr = keys.next();
+                int qNum = Integer.parseInt(keyStr);
+                
+                String ansLetter = answers.getString(keyStr).toUpperCase();
+                // Map 'A' -> 0, 'B' -> 1, etc.
+                int ansIndex = ansLetter.charAt(0) - 'A';
+                
+                currentAnswerKey.put(qNum, ansIndex);
+            }
+
+            String successMsg = "Successfully Loaded Key:\n" + currentQuizName + "\nTotal Questions: " + currentAnswerKey.size() + "\nOptions/Question: " + currentOptionsCount;
+            tvResults.setText(successMsg);
+            Toast.makeText(this, "Answer Key Loaded", Toast.LENGTH_SHORT).show();
+            btnExportAnswers.setVisibility(View.GONE);
+            lastExportJson = null;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load JSON", e);
+            Toast.makeText(this, "Failed to load JSON", Toast.LENGTH_SHORT).show();
+            tvResults.setText("Error loading JSON: \n" + e.getMessage());
+        }
     }
 
     private void launchCameraIntent() {
@@ -104,6 +195,16 @@ public class MainActivity extends AppCompatActivity {
 
     private void processCapturedImage() {
         if (photoUri == null) return;
+
+        // Reset export state before processing
+        btnExportAnswers.setVisibility(View.GONE);
+        lastExportJson = null;
+        
+        if (currentAnswerKey.isEmpty()) {
+            Toast.makeText(this, "Please upload an Answer Key first.", Toast.LENGTH_LONG).show();
+            tvResults.setText("Error: Cannot grade without loading a JSON Answer Key.");
+            return;
+        }
         
         try {
             BitmapFactory.Options options = new BitmapFactory.Options();
@@ -162,11 +263,19 @@ public class MainActivity extends AppCompatActivity {
                 Mat mat = new Mat();
                 Utils.bitmapToMat(bitmap, mat);
                 
-                Map<Integer, Integer> testKey = new HashMap<>();
-                testKey.put(1, 0); 
+                // Perform grading using loaded JSON data
+                GradeScanner.ScanResult result = gradeScanner.grade(mat, currentAnswerKey, currentOptionsCount);
+                int score = result.score;
+
+                // Generate JSON and enable export button
+                lastExportJson = generateStudentJson(result.studentAnswers, score);
+                if (lastExportJson != null) {
+                    btnExportAnswers.setVisibility(View.VISIBLE);
+                }
                 
-                int score = gradeScanner.grade(mat, testKey);
-                tvResults.setText("Scan Complete.\nScore: " + score);
+                String finalResult = "Scan Complete!\nQuiz: " + currentQuizName + 
+                                     "\nFinal Score: " + score + " / " + currentAnswerKey.size();
+                tvResults.setText(finalResult);
                 
                 mat.release();
                 bitmap.recycle();
@@ -177,6 +286,32 @@ public class MainActivity extends AppCompatActivity {
         } catch (Error e) {
             Log.e(TAG, "Native library error", e);
             tvResults.setText("System error (Native): " + e.getMessage());
+        }
+    }
+
+    private String generateStudentJson(Map<Integer, Integer> studentAnswers, int score) {
+        try {
+            JSONObject root = new JSONObject();
+            root.put("quiz_name", currentQuizName);
+            root.put("score", score);
+            root.put("total_questions", currentAnswerKey.size());
+
+            JSONObject answersObject = new JSONObject();
+            for (Map.Entry<Integer, Integer> entry : studentAnswers.entrySet()) {
+                String questionNum = String.valueOf(entry.getKey());
+                String answerLetter = "N/A";
+                if (entry.getValue() >= 0) {
+                    // Map index back to letter: 0 -> A, 1 -> B, etc.
+                    answerLetter = String.valueOf((char) ('A' + entry.getValue()));
+                }
+                answersObject.put(questionNum, answerLetter);
+            }
+            root.put("student_answers", answersObject);
+
+            return root.toString(4); // Pretty print with an indent of 4 spaces
+        } catch (Exception e) {
+            Log.e(TAG, "Error generating student JSON", e);
+            return null;
         }
     }
 }

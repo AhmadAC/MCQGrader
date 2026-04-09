@@ -30,6 +30,16 @@
         android:backgroundTint="#4CAF50"
         android:textColor="#FFFFFF" />
 
+    <Button
+        android:id="@+id/btnExportAnswers"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="Export Student Answers (JSON)"
+        android:layout_marginTop="10dp"
+        android:backgroundTint="#2196F3"
+        android:textColor="#FFFFFF"
+        android:visibility="gone" />
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
