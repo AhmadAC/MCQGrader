@@ -120,7 +120,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         // Trigger file picker for JSON files
-        btnLoadKey.setOnClickListener(v -> jsonPickerLauncher.launch(new String[]{"*/*"}));
+        btnLoadKey.setOnClickListener(v -> jsonPickerLauncher.launch(new String[]{"application/json", "text/plain"}));
 
         // Trigger file saver for student answers
         btnExportAnswers.setOnClickListener(v -> {
