@@ -10,15 +10,12 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
-
 import org.json.JSONObject;
 import org.opencv.android.OpenCVLoader;
-
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -138,6 +135,7 @@ public class MainActivity extends AppCompatActivity {
     private void launchScanner() {
         try {
             Intent intent = new Intent(this, ScannerActivity.class);
+            // Fix for ClassCastException: Map keys must be Strings for JSONObject
             JSONObject keyObj = new JSONObject();
             for (Map.Entry<Integer, Integer> entry : currentAnswerKey.entrySet()) {
                 keyObj.put(String.valueOf(entry.getKey()), entry.getValue());
@@ -146,7 +144,7 @@ public class MainActivity extends AppCompatActivity {
             intent.putExtra("options_count", currentOptionsCount);
             scannerLauncher.launch(intent);
         } catch (Exception e) {
-            Log.e(TAG, "Scanner Launch Error", e);
+            Log.e(TAG, "Launch Error", e);
         }
     }
 
@@ -170,10 +168,10 @@ public class MainActivity extends AppCompatActivity {
                 int ansIndex = answers.getString(keyStr).toUpperCase().charAt(0) - 'A';
                 currentAnswerKey.put(qNum, ansIndex);
             }
-            tvResults.setText("Loaded: " + currentQuizName + "\nQuestions: " + currentAnswerKey.size());
+            tvResults.setText("Loaded: " + currentQuizName + "\nTotal: " + currentAnswerKey.size());
             btnClearKey.setVisibility(View.VISIBLE);
         } catch (Exception e) {
-            Toast.makeText(this, "Error loading JSON", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "JSON Load Error", Toast.LENGTH_SHORT).show();
         }
     }
 }
