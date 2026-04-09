@@ -10,15 +10,12 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
-
 import org.json.JSONObject;
 import org.opencv.android.OpenCVLoader;
-
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -44,7 +41,7 @@ public class MainActivity extends AppCompatActivity {
                 if (isGranted) {
                     launchScanner();
                 } else {
-                    Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Camera permission required.", Toast.LENGTH_SHORT).show();
                 }
             });
 
@@ -68,16 +65,16 @@ public class MainActivity extends AppCompatActivity {
                             JSONObject formattedAns = new JSONObject();
                             Iterator<String> keys = rawAns.keys();
                             while(keys.hasNext()) {
-                                String q = keys.next();
-                                int idx = rawAns.getInt(q);
+                                String qNum = keys.next();
+                                int idx = rawAns.getInt(qNum);
                                 String letter = (idx == -1) ? "N/A" : String.valueOf((char)('A' + idx));
-                                formattedAns.put(q, letter);
+                                formattedAns.put(qNum, letter);
                             }
                             root.put("student_answers", formattedAns);
                         }
                         lastExportJson = root.toString(4);
                     } catch (Exception e) {
-                        Log.e(TAG, "Export Error", e);
+                        Log.e(TAG, "Export formatting error", e);
                     }
                 }
             });
@@ -111,17 +108,16 @@ public class MainActivity extends AppCompatActivity {
         tvResults = findViewById(R.id.tvResults);
         btnExportAnswers = findViewById(R.id.btnExportAnswers);
         btnClearKey = findViewById(R.id.btnClearKey);
-        Button btnScanSheet = findViewById(R.id.btnScanSheet);
-        Button btnLoadKey = findViewById(R.id.btnLoadKey);
 
-        btnLoadKey.setOnClickListener(v -> {
+        findViewById(R.id.btnLoadKey).setOnClickListener(v -> {
+            // FIX: Removed strict MIME filtering so 'use.json' shows up
             Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-            intent.setType("*/*");
+            intent.setType("*/*"); 
             intent.addCategory(Intent.CATEGORY_OPENABLE);
-            filePickerLauncher.launch(Intent.createChooser(intent, "Select Answer Key..."));
+            filePickerLauncher.launch(Intent.createChooser(intent, "Select any JSON File"));
         });
 
-        btnScanSheet.setOnClickListener(v -> {
+        findViewById(R.id.btnScanSheet).setOnClickListener(v -> {
             if (currentAnswerKey.isEmpty()) {
                 Toast.makeText(this, "Load a key first!", Toast.LENGTH_SHORT).show();
                 return;
@@ -170,6 +166,13 @@ public class MainActivity extends AppCompatActivity {
             while ((line = reader.readLine()) != null) sb.append(line);
 
             JSONObject json = new JSONObject(sb.toString());
+            
+            // Check for required fields to give better user feedback
+            if (!json.has("answers")) {
+                tvResults.setText("Error: The file is a valid JSON but is missing the \"answers\" section.");
+                return;
+            }
+
             currentQuizName = json.optString("quiz_name", "Quiz");
             currentOptionsCount = json.optInt("options_count", 6);
             JSONObject answers = json.getJSONObject("answers");
@@ -185,7 +188,8 @@ public class MainActivity extends AppCompatActivity {
             tvResults.setText("Loaded: " + currentQuizName + "\nTotal Questions: " + currentAnswerKey.size());
             btnClearKey.setVisibility(View.VISIBLE);
         } catch (Exception e) {
-            Toast.makeText(this, "Error loading JSON", Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "JSON error", e);
+            tvResults.setText("Failed to load JSON.\nReason: " + e.getMessage() + "\n\nEnsure file looks like:\n{\n \"answers\": {\"1\":\"A\"}\n}");
         }
     }
 }
