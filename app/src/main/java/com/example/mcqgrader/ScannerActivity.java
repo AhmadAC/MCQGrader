@@ -3,10 +3,7 @@ package com.example.mcqgrader;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
-import android.util.Size;
-import android.widget.Button;
-import android.widget.TextView;
-
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
@@ -15,19 +12,17 @@ import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
-
+import android.widget.Button;
+import android.widget.TextView;
 import com.google.common.util.concurrent.ListenableFuture;
-
 import org.json.JSONObject;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -35,17 +30,12 @@ public class ScannerActivity extends AppCompatActivity {
     private static final String TAG = "ScannerActivity";
     private PreviewView previewView;
     private TextView tvScoreOverlay;
-    private Button btnDone;
-
     private ExecutorService cameraExecutor;
     private GradeScanner gradeScanner;
-
-    private Map<Integer, Integer> currentAnswerKey = new HashMap<>();
-    private int currentOptionsCount = 6;
-    private int totalQuestions = 0;
-
-    private int bestScore = 0;
-    private String bestStudentAnswersJson = null;
+    private Map<Integer, Integer> answerKey = new HashMap<>();
+    private int optionsCount;
+    private int bestScore = -1;
+    private String bestAnswersJson = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,143 +44,116 @@ public class ScannerActivity extends AppCompatActivity {
 
         previewView = findViewById(R.id.previewView);
         tvScoreOverlay = findViewById(R.id.tvScoreOverlay);
-        btnDone = findViewById(R.id.btnDone);
+        Button btnFinish = findViewById(R.id.btnFinish);
 
         gradeScanner = new GradeScanner();
-
-        String answerKeyJson = getIntent().getStringExtra("answerKeyJson");
-        currentOptionsCount = getIntent().getIntExtra("optionsCount", 6);
-
-        if (answerKeyJson != null) {
-            try {
-                JSONObject json = new JSONObject(answerKeyJson);
-                Iterator<String> keys = json.keys();
-                while (keys.hasNext()) {
-                    String k = keys.next();
-                    currentAnswerKey.put(Integer.parseInt(k), json.getInt(k));
-                }
-                totalQuestions = currentAnswerKey.size();
-            } catch (Exception e) {
-                Log.e(TAG, "Error parsing answer key", e);
-            }
-        }
-        
-        // Set initial overlay text
-        tvScoreOverlay.setText("0/" + totalQuestions);
-
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        btnDone.setOnClickListener(v -> {
-            Intent resultIntent = new Intent();
-            resultIntent.putExtra("bestScore", bestScore);
-            resultIntent.putExtra("studentAnswersJson", bestStudentAnswersJson);
-            setResult(RESULT_OK, resultIntent);
-            finish();
-        });
+        // Load Answer Key passed from MainActivity
+        String keyJson = getIntent().getStringExtra("key_json");
+        optionsCount = getIntent().getIntExtra("options_count", 6);
+        parseKey(keyJson);
 
         startCamera();
+
+        btnFinish.setOnClickListener(v -> {
+            Intent intent = new Intent();
+            intent.putExtra("score", bestScore);
+            intent.putExtra("answers", bestAnswersJson);
+            setResult(RESULT_OK, intent);
+            finish();
+        });
+    }
+
+    private void parseKey(String jsonStr) {
+        try {
+            if (jsonStr == null) return;
+            JSONObject obj = new JSONObject(jsonStr);
+            Iterator<String> keys = obj.keys();
+            while (keys.hasNext()) {
+                String k = keys.next();
+                answerKey.put(Integer.parseInt(k), obj.getInt(k));
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to parse answer key JSON", e);
+        }
     }
 
     private void startCamera() {
-        ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
-
-        cameraProviderFuture.addListener(() -> {
+        ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(this);
+        future.addListener(() -> {
             try {
-                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-
+                ProcessCameraProvider provider = future.get();
                 Preview preview = new Preview.Builder().build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
-                ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
-                        .setTargetResolution(new Size(1200, 1200))
+                ImageAnalysis analysis = new ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
-                imageAnalysis.setAnalyzer(cameraExecutor, this::processImage);
+                analysis.setAnalyzer(cameraExecutor, this::processFrame);
 
-                CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
-
-                cameraProvider.unbindAll();
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis);
-
-            } catch (ExecutionException | InterruptedException e) {
-                Log.e(TAG, "Use case binding failed", e);
+                provider.unbindAll();
+                provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
+            } catch (Exception e) {
+                Log.e(TAG, "CameraX initialization failed", e);
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
-    private void processImage(ImageProxy image) {
-        try {
-            if (image.getPlanes().length == 0) {
-                return;
+    private void processFrame(@NonNull ImageProxy image) {
+        // We need an RGBA Mat for the GradeScanner, so we convert from YUV
+        Mat mat = yuvToRgba(image);
+
+        // Correct for rotation
+        Core.rotate(mat, mat, Core.ROTATE_90_CLOCKWISE);
+
+        GradeScanner.ScanResult result = gradeScanner.grade(mat, answerKey, optionsCount);
+
+        runOnUiThread(() -> {
+            String scoreDisplay = result.score + " / " + answerKey.size();
+            tvScoreOverlay.setText(scoreDisplay);
+
+            if (result.score > bestScore) {
+                bestScore = result.score;
+                bestAnswersJson = new JSONObject(result.studentAnswers).toString();
             }
+        });
 
-            // Extract the purely grayscale plane (Y-plane) - High Performance Trick
-            ImageProxy.PlaneProxy yPlane = image.getPlanes()[0];
-            ByteBuffer yBuffer = yPlane.getBuffer();
-            int ySize = yBuffer.remaining();
-            byte[] yData = new byte[ySize];
-            yBuffer.get(yData);
-
-            int width = image.getWidth();
-            int height = image.getHeight();
-            int rowStride = yPlane.getRowStride();
-
-            Mat grayMat;
-            if (rowStride == width) {
-                grayMat = new Mat(height, width, CvType.CV_8UC1);
-                grayMat.put(0, 0, yData);
-            } else {
-                Mat paddedMat = new Mat(height, rowStride, CvType.CV_8UC1);
-                paddedMat.put(0, 0, yData);
-                grayMat = paddedMat.submat(0, height, 0, width).clone();
-                paddedMat.release();
-            }
-
-            // Accommodate rotation differences per device architecture
-            int rotationDegrees = image.getImageInfo().getRotationDegrees();
-            if (rotationDegrees == 90) {
-                Core.rotate(grayMat, grayMat, Core.ROTATE_90_CLOCKWISE);
-            } else if (rotationDegrees == 180) {
-                Core.rotate(grayMat, grayMat, Core.ROTATE_180);
-            } else if (rotationDegrees == 270) {
-                Core.rotate(grayMat, grayMat, Core.ROTATE_90_COUNTERCLOCKWISE);
-            }
-
-            // Run OpenCV Logic natively
-            GradeScanner.ScanResult result = gradeScanner.grade(grayMat, currentAnswerKey, currentOptionsCount);
-            grayMat.release();
-
-            // Push result up to Layout Overlay
-            runOnUiThread(() -> {
-                String scoreText = result.score + "/" + totalQuestions;
-                tvScoreOverlay.setText(scoreText);
-
-                // Remember the most ideal alignment across frames for exporting
-                if (result.score >= bestScore) {
-                    bestScore = result.score;
-                    try {
-                        JSONObject ansJson = new JSONObject();
-                        for (Map.Entry<Integer, Integer> entry : result.studentAnswers.entrySet()) {
-                            ansJson.put(String.valueOf(entry.getKey()), entry.getValue());
-                        }
-                        bestStudentAnswersJson = ansJson.toString();
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
-
-        } catch (Exception e) {
-            Log.e(TAG, "Error processing frame", e);
-        } finally {
-            image.close();
-        }
+        mat.release();
+        image.close();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         cameraExecutor.shutdown();
+    }
+
+    private Mat yuvToRgba(ImageProxy image) {
+        ImageProxy.PlaneProxy[] planes = image.getPlanes();
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        ByteBuffer yBuffer = planes[0].getBuffer();
+        ByteBuffer uBuffer = planes[1].getBuffer();
+        ByteBuffer vBuffer = planes[2].getBuffer();
+
+        int ySize = yBuffer.remaining();
+        int uSize = uBuffer.remaining();
+        int vSize = vBuffer.remaining();
+
+        byte[] nv21 = new byte[ySize + uSize + vSize];
+        yBuffer.get(nv21, 0, ySize);
+        vBuffer.get(nv21, ySize, vSize);
+        uBuffer.get(nv21, ySize + vSize, uSize);
+
+        Mat yuv = new Mat(height + height / 2, width, CvType.CV_8UC1);
+        yuv.put(0, 0, nv21);
+        Mat rgba = new Mat();
+        Imgproc.cvtColor(yuv, rgba, Imgproc.COLOR_YUV2RGBA_NV21, 4);
+
+        yuv.release();
+        return rgba;
     }
 }
