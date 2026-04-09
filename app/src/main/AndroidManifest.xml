@@ -11,8 +11,6 @@
         android:roundIcon="@mipmap/icon"
         android:label="MCQGrader"
         android:supportsRtl="true"
-        android:extractNativeLibs="true"
-        tools:replace="android:extractNativeLibs"
         android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
 
         <activity
