@@ -70,10 +70,14 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
 
-    private final ActivityResultLauncher<String[]> jsonPickerLauncher =
-            registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
-                if (uri != null) {
-                    loadJsonFromUri(uri);
+    // **NEW**: A more robust launcher using a generic Intent
+    private final ActivityResultLauncher<Intent> filePickerLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                    Uri uri = result.getData().getData();
+                    if (uri != null) {
+                        loadJsonFromUri(uri);
+                    }
                 }
             });
 
@@ -97,7 +101,6 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main); 
 
-        // Critical: Initialize OpenCV before any Mat operations
         if (OpenCVLoader.initDebug()) {
             Log.d(TAG, "OpenCV initialized successfully");
         } else {
@@ -119,10 +122,15 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // Trigger file picker for JSON files
-        btnLoadKey.setOnClickListener(v -> jsonPickerLauncher.launch(new String[]{"application/json", "text/plain"}));
+        // **UPDATED**: Use the new, robust method to launch the file picker
+        btnLoadKey.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.setType("*/*"); // Set the general type to all files
+            String[] mimeTypes = {"application/json", "text/plain"};
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes); // Provide specific hints
+            filePickerLauncher.launch(intent);
+        });
 
-        // Trigger file saver for student answers
         btnExportAnswers.setOnClickListener(v -> {
             if (lastExportJson != null) {
                 jsonExportLauncher.launch("student_answers.json");
@@ -149,14 +157,12 @@ public class MainActivity extends AppCompatActivity {
             JSONObject answers = json.getJSONObject("answers");
             currentAnswerKey.clear();
 
-            // Iterate dynamically through keys
             Iterator<String> keys = answers.keys();
             while (keys.hasNext()) {
                 String keyStr = keys.next();
                 int qNum = Integer.parseInt(keyStr);
                 
                 String ansLetter = answers.getString(keyStr).toUpperCase();
-                // Map 'A' -> 0, 'B' -> 1, etc.
                 int ansIndex = ansLetter.charAt(0) - 'A';
                 
                 currentAnswerKey.put(qNum, ansIndex);
@@ -181,7 +187,6 @@ public class MainActivity extends AppCompatActivity {
             File photoFile = File.createTempFile("SCAN_", ".jpg", getCacheDir());
             photoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", photoFile);
             takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
-            // Allow Uri permissions for Samsung Camera App
             takePictureIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             takePictureLauncher.launch(takePictureIntent);
         } catch (IOException ex) {
@@ -196,7 +201,6 @@ public class MainActivity extends AppCompatActivity {
     private void processCapturedImage() {
         if (photoUri == null) return;
 
-        // Reset export state before processing
         btnExportAnswers.setVisibility(View.GONE);
         lastExportJson = null;
         
@@ -213,7 +217,6 @@ public class MainActivity extends AppCompatActivity {
                 BitmapFactory.decodeStream(is, null, options);
             }
             
-            // Scaled down to prevent OOM on S21+ high-res images
             int reqWidth = 1200;
             int reqHeight = 1200;
             int inSampleSize = 1;
@@ -234,7 +237,6 @@ public class MainActivity extends AppCompatActivity {
             }
             
             if (bitmap != null) {
-                // Correct Samsung Auto-Rotation
                 int orientation = ExifInterface.ORIENTATION_NORMAL;
                 try (InputStream is = getContentResolver().openInputStream(photoUri)) {
                     ExifInterface ei = new ExifInterface(is);
@@ -263,11 +265,9 @@ public class MainActivity extends AppCompatActivity {
                 Mat mat = new Mat();
                 Utils.bitmapToMat(bitmap, mat);
                 
-                // Perform grading using loaded JSON data
                 GradeScanner.ScanResult result = gradeScanner.grade(mat, currentAnswerKey, currentOptionsCount);
                 int score = result.score;
 
-                // Generate JSON and enable export button
                 lastExportJson = generateStudentJson(result.studentAnswers, score);
                 if (lastExportJson != null) {
                     btnExportAnswers.setVisibility(View.VISIBLE);
@@ -301,14 +301,13 @@ public class MainActivity extends AppCompatActivity {
                 String questionNum = String.valueOf(entry.getKey());
                 String answerLetter = "N/A";
                 if (entry.getValue() >= 0) {
-                    // Map index back to letter: 0 -> A, 1 -> B, etc.
                     answerLetter = String.valueOf((char) ('A' + entry.getValue()));
                 }
                 answersObject.put(questionNum, answerLetter);
             }
             root.put("student_answers", answersObject);
 
-            return root.toString(4); // Pretty print with an indent of 4 spaces
+            return root.toString(4);
         } catch (Exception e) {
             Log.e(TAG, "Error generating student JSON", e);
             return null;
