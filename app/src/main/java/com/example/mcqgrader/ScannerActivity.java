@@ -19,6 +19,7 @@ import org.json.JSONObject;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.imgproc.Imgproc; // <<< FIX: ADDED THIS IMPORT
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Iterator;
