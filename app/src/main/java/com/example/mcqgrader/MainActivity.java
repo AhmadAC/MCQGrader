@@ -53,7 +53,7 @@ public class MainActivity extends AppCompatActivity {
                 if (result.getResultCode() == RESULT_OK && result.getData() != null) {
                     int score = result.getData().getIntExtra("score", -1);
                     if (score == -1) {
-                         tvResults.setText("Scanning was cancelled.");
+                         tvResults.setText("Scanning was cancelled or no score was captured.");
                          return;
                     }
 
@@ -120,8 +120,13 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnLoadKey.setOnClickListener(v -> {
-            Intent intent = new Intent(Intent.ACTION_GET_CONTENT).setType("*/*");
-            filePickerLauncher.launch(intent);
+            // This intent forces a chooser, allowing you to select your preferred file explorer.
+            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.setType("*/*");
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            
+            Intent chooser = Intent.createChooser(intent, "Select Answer Key using...");
+            filePickerLauncher.launch(chooser);
         });
 
         btnClearKey.setOnClickListener(v -> {

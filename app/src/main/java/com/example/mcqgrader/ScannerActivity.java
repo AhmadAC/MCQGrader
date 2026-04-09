@@ -19,7 +19,6 @@ import org.json.JSONObject;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.imgproc.Imgproc; // <<< FIX: ADDED THIS IMPORT
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -36,7 +35,7 @@ public class ScannerActivity extends AppCompatActivity {
     private Map<Integer, Integer> answerKey = new HashMap<>();
     private int optionsCount;
     private int bestScore = -1;
-    private String bestAnswersJson = "";
+    private String bestAnswersJson = "{}";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,7 +49,6 @@ public class ScannerActivity extends AppCompatActivity {
         gradeScanner = new GradeScanner();
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        // Load Answer Key passed from MainActivity
         String keyJson = getIntent().getStringExtra("key_json");
         optionsCount = getIntent().getIntExtra("options_count", 6);
         parseKey(keyJson);
@@ -76,7 +74,7 @@ public class ScannerActivity extends AppCompatActivity {
                 answerKey.put(Integer.parseInt(k), obj.getInt(k));
             }
         } catch (Exception e) {
-            Log.e(TAG, "Failed to parse answer key JSON", e);
+            Log.e(TAG, "Key Parse Error", e);
         }
     }
 
@@ -97,31 +95,54 @@ public class ScannerActivity extends AppCompatActivity {
                 provider.unbindAll();
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
             } catch (Exception e) {
-                Log.e(TAG, "CameraX initialization failed", e);
+                Log.e(TAG, "Camera Init Error", e);
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
     private void processFrame(@NonNull ImageProxy image) {
-        // We need an RGBA Mat for the GradeScanner, so we convert from YUV
-        Mat mat = yuvToRgba(image);
+        // Safe conversion of CameraX Y-plane to OpenCV Mat
+        ImageProxy.PlaneProxy plane = image.getPlanes()[0];
+        ByteBuffer buffer = plane.getBuffer();
+        byte[] data = new byte[buffer.remaining()];
+        buffer.get(data);
 
-        // Correct for rotation
-        Core.rotate(mat, mat, Core.ROTATE_90_CLOCKWISE);
+        Mat mat = new Mat(image.getHeight(), plane.getRowStride(), CvType.CV_8UC1);
+        mat.put(0, 0, data);
 
-        GradeScanner.ScanResult result = gradeScanner.grade(mat, answerKey, optionsCount);
+        // Remove stride padding if present
+        Mat croppedMat = new Mat();
+        if (plane.getRowStride() != image.getWidth()) {
+            croppedMat = mat.submat(0, image.getHeight(), 0, image.getWidth());
+        } else {
+            croppedMat = mat.clone();
+        }
+        mat.release();
+
+        // Handle rotation correctly
+        int rotation = image.getImageInfo().getRotationDegrees();
+        if (rotation == 90) {
+            Core.rotate(croppedMat, croppedMat, Core.ROTATE_90_CLOCKWISE);
+        } else if (rotation == 180) {
+            Core.rotate(croppedMat, croppedMat, Core.ROTATE_180);
+        } else if (rotation == 270) {
+            Core.rotate(croppedMat, croppedMat, Core.ROTATE_90_COUNTERCLOCKWISE);
+        }
+
+        // Run the grader
+        GradeScanner.ScanResult result = gradeScanner.grade(croppedMat, answerKey, optionsCount);
 
         runOnUiThread(() -> {
             String scoreDisplay = result.score + " / " + answerKey.size();
             tvScoreOverlay.setText(scoreDisplay);
 
-            if (result.score > bestScore) {
+            if (result.score >= bestScore) {
                 bestScore = result.score;
                 bestAnswersJson = new JSONObject(result.studentAnswers).toString();
             }
         });
 
-        mat.release();
+        croppedMat.release();
         image.close();
     }
 
@@ -129,32 +150,5 @@ public class ScannerActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         cameraExecutor.shutdown();
-    }
-
-    private Mat yuvToRgba(ImageProxy image) {
-        ImageProxy.PlaneProxy[] planes = image.getPlanes();
-        int width = image.getWidth();
-        int height = image.getHeight();
-
-        ByteBuffer yBuffer = planes[0].getBuffer();
-        ByteBuffer uBuffer = planes[1].getBuffer();
-        ByteBuffer vBuffer = planes[2].getBuffer();
-
-        int ySize = yBuffer.remaining();
-        int uSize = uBuffer.remaining();
-        int vSize = vBuffer.remaining();
-
-        byte[] nv21 = new byte[ySize + uSize + vSize];
-        yBuffer.get(nv21, 0, ySize);
-        vBuffer.get(nv21, ySize, vSize);
-        uBuffer.get(nv21, ySize + vSize, uSize);
-
-        Mat yuv = new Mat(height + height / 2, width, CvType.CV_8UC1);
-        yuv.put(0, 0, nv21);
-        Mat rgba = new Mat();
-        Imgproc.cvtColor(yuv, rgba, Imgproc.COLOR_YUV2RGBA_NV21, 4);
-
-        yuv.release();
-        return rgba;
     }
 }
