@@ -10,7 +10,7 @@ import java.util.Map;
 
 public class GradeScanner {
 
-    private static final int NUM_OPTIONS = 6; // A, B, C, D, E, F
+    private static final int NUM_OPTIONS = 6; 
 
     public int grade(Mat img, Map<Integer, Integer> key) {
         Mat gray = new Mat();
@@ -34,17 +34,13 @@ public class GradeScanner {
             }
         }
 
-        // Sort Top to Bottom
         Collections.sort(bubbles, Comparator.comparingInt(r -> r.y));
 
         int totalScore = 0;
         for (int q = 0; q < key.size(); q++) {
             if ((q * NUM_OPTIONS) + NUM_OPTIONS > bubbles.size()) break;
 
-            // Get the 6 bubbles for this specific question
             List<Rect> row = new ArrayList<>(bubbles.subList(q * NUM_OPTIONS, (q * NUM_OPTIONS) + NUM_OPTIONS));
-            
-            // Sort Row Left to Right (A to F)
             Collections.sort(row, Comparator.comparingInt(r -> r.x));
 
             int filledIndex = -1;
@@ -65,7 +61,6 @@ public class GradeScanner {
                 }
             }
 
-            // Compare with the key (JSON is 1-based, index is 0-based)
             if (key.containsKey(q + 1) && filledIndex == key.get(q + 1)) {
                 totalScore++;
             }

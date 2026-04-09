@@ -2,18 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"> 
 
-    <!-- Required Permissions -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.CAMERA" />
     
-    <!-- Required for Android 11+ to query and "see" external camera apps -->
     <queries>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
     </queries>
 
-    <!-- Added the icon and app name back in -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/icon"
@@ -30,7 +27,6 @@
             </intent-filter>
         </activity>
 
-        <!-- The FileProvider required to safely pass the image URI to the Camera App -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

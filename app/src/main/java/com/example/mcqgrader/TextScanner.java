@@ -8,7 +8,6 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 public class TextScanner {
 
-    // This interface allows MainActivity to receive the text asynchronously
     public interface OCRListener {
         void onTextReceived(String text);
     }
