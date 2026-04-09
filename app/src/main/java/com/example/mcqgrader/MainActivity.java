@@ -70,7 +70,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
 
-    // **NEW**: A more robust launcher using a generic Intent
+    // A robust launcher that receives the result from the file picker
     private final ActivityResultLauncher<Intent> filePickerLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == RESULT_OK && result.getData() != null) {
@@ -122,13 +122,19 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // **UPDATED**: Use the new, robust method to launch the file picker
+        // **UPDATED**: Use Intent.createChooser() to force an app selection dialog
         btnLoadKey.setOnClickListener(v -> {
+            // 1. Create the base intent to get content
             Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
             intent.setType("*/*"); // Set the general type to all files
             String[] mimeTypes = {"application/json", "text/plain"};
             intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes); // Provide specific hints
-            filePickerLauncher.launch(intent);
+
+            // 2. Wrap the base intent in a chooser intent
+            Intent chooserIntent = Intent.createChooser(intent, "Select Answer Key using...");
+            
+            // 3. Launch the chooser intent
+            filePickerLauncher.launch(chooserIntent);
         });
 
         btnExportAnswers.setOnClickListener(v -> {
