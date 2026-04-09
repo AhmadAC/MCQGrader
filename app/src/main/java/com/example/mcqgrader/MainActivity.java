@@ -1,4 +1,4 @@
-package com.example.mcqgrader; // TODO: Replace with your exact package name from your project!
+package com.example.mcqgrader;
 
 import android.Manifest;
 import android.content.Intent;
@@ -7,7 +7,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.widget.Button;
-import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -22,7 +22,7 @@ import java.io.IOException;
 public class MainActivity extends AppCompatActivity {
 
     private Uri photoUri;
-    // private ImageView imageView; // Uncomment if you are displaying the captured image
+    private TextView tvResults;
 
     // 1. Launcher for handling the Camera Permission request
     private final ActivityResultLauncher<String> requestPermissionLauncher =
@@ -33,6 +33,9 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     // Permission denied
                     Toast.makeText(this, "Camera permission is required to scan the marking key", Toast.LENGTH_LONG).show();
+                    if (tvResults != null) {
+                        tvResults.setText("Error: Camera permission denied.");
+                    }
                 }
             });
 
@@ -43,9 +46,10 @@ public class MainActivity extends AppCompatActivity {
                     // The photo was taken successfully and saved to 'photoUri'
                     Toast.makeText(this, "Marking key scanned successfully!", Toast.LENGTH_SHORT).show();
                     
-                    // if (imageView != null) {
-                    //    imageView.setImageURI(photoUri);
-                    // }
+                    // Update the screen to show it was successful
+                    if (tvResults != null) {
+                        tvResults.setText("Marking key scanned successfully!\n\nImage URI:\n" + photoUri.toString());
+                    }
                     
                     // TODO: Pass photoUri to your OpenCV or grading logic here
                 } else {
@@ -56,12 +60,20 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main); // Make sure this matches your layout file
+        setContentView(R.layout.activity_main); 
 
-        // Replace 'R.id.scanButton' with the ID of your actual scanning button
-        Button scanButton = findViewById(R.id.scanButton); 
+        // Link the UI elements from your XML layout
+        Button btnScanSheet = findViewById(R.id.btnScanSheet); 
+        Button btnLoadKey = findViewById(R.id.btnLoadKey);
+        tvResults = findViewById(R.id.tvResults);
         
-        scanButton.setOnClickListener(v -> scanMarkingKey());
+        // Setup click listener for the Camera button
+        btnScanSheet.setOnClickListener(v -> scanMarkingKey());
+        
+        // Setup click listener for the Upload button (Placeholder for now)
+        btnLoadKey.setOnClickListener(v -> {
+            Toast.makeText(this, "Upload Answer Key feature coming soon!", Toast.LENGTH_SHORT).show();
+        });
     }
 
     /**
