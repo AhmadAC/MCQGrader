@@ -8,8 +8,9 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 public class TextScanner {
 
+    // This interface allows MainActivity to receive the text asynchronously
     public interface OCRListener {
-        void onSuccess(String text);
+        void onTextReceived(String text);
     }
 
     public void scan(Bitmap bitmap, OCRListener listener) {
@@ -17,7 +18,7 @@ public class TextScanner {
         TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
 
         recognizer.process(image)
-                .addOnSuccessListener(visionText -> listener.onSuccess(visionText.getText()))
-                .addOnFailureListener(e -> listener.onSuccess("Error reading text."));
+                .addOnSuccessListener(visionText -> listener.onTextReceived(visionText.getText()))
+                .addOnFailureListener(e -> listener.onTextReceived("Error reading text."));
     }
 }
