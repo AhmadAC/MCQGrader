@@ -1,6 +1,7 @@
 package com.example.mcqgrader;
 
 import android.Manifest;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -33,6 +34,7 @@ import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final String TAG = "MCQGrader_Main";
     private Uri photoUri;
     private TextView tvResults;
     private GradeScanner gradeScanner;
@@ -58,10 +60,11 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main); 
 
+        // Critical: Initialize OpenCV before any Mat operations
         if (OpenCVLoader.initDebug()) {
-            Log.d("OpenCV", "OpenCV initialized successfully");
+            Log.d(TAG, "OpenCV initialized successfully");
         } else {
-            Log.e("OpenCV", "OpenCV initialization failed");
+            Log.e(TAG, "OpenCV initialization failed");
             Toast.makeText(this, "OpenCV initialization failed", Toast.LENGTH_LONG).show();
         }
 
@@ -83,30 +86,35 @@ public class MainActivity extends AppCompatActivity {
 
     private void launchCameraIntent() {
         Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
-            try {
-                File photoFile = File.createTempFile("SCAN_", ".jpg", getCacheDir());
-                photoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", photoFile);
-                takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
-                takePictureLauncher.launch(takePictureIntent);
-            } catch (IOException ex) {
-                Toast.makeText(this, "File creation failed", Toast.LENGTH_SHORT).show();
-            }
+        try {
+            File photoFile = File.createTempFile("SCAN_", ".jpg", getCacheDir());
+            photoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", photoFile);
+            takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
+            // Allow Uri permissions for Samsung Camera App
+            takePictureIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            takePictureLauncher.launch(takePictureIntent);
+        } catch (IOException ex) {
+            Log.e(TAG, "File creation failed", ex);
+            Toast.makeText(this, "File creation failed", Toast.LENGTH_SHORT).show();
+        } catch (ActivityNotFoundException e) {
+            Log.e(TAG, "No camera app found", e);
+            Toast.makeText(this, "No camera app found", Toast.LENGTH_SHORT).show();
         }
     }
 
     private void processCapturedImage() {
+        if (photoUri == null) return;
+        
         try {
-            // Decode boundaries to verify dimensions and prevent OutOfMemory crashes
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inJustDecodeBounds = true;
             try (InputStream is = getContentResolver().openInputStream(photoUri)) {
                 BitmapFactory.decodeStream(is, null, options);
             }
             
-            // Calculate scale down factor
-            int reqWidth = 1024;
-            int reqHeight = 1024;
+            // Scaled down to prevent OOM on S21+ high-res images
+            int reqWidth = 1200;
+            int reqHeight = 1200;
             int inSampleSize = 1;
             if (options.outHeight > reqHeight || options.outWidth > reqWidth) {
                 final int halfHeight = options.outHeight / 2;
@@ -125,7 +133,7 @@ public class MainActivity extends AppCompatActivity {
             }
             
             if (bitmap != null) {
-                // Read EXIF tag to detect incorrect image rotations natively
+                // Correct Samsung Auto-Rotation
                 int orientation = ExifInterface.ORIENTATION_NORMAL;
                 try (InputStream is = getContentResolver().openInputStream(photoUri)) {
                     ExifInterface ei = new ExifInterface(is);
@@ -133,35 +141,27 @@ public class MainActivity extends AppCompatActivity {
                 }
                 
                 int degree = 0;
-                switch (orientation) {
-                    case ExifInterface.ORIENTATION_ROTATE_90: degree = 90; break;
-                    case ExifInterface.ORIENTATION_ROTATE_180: degree = 180; break;
-                    case ExifInterface.ORIENTATION_ROTATE_270: degree = 270; break;
-                }
+                if (orientation == ExifInterface.ORIENTATION_ROTATE_90) degree = 90;
+                else if (orientation == ExifInterface.ORIENTATION_ROTATE_180) degree = 180;
+                else if (orientation == ExifInterface.ORIENTATION_ROTATE_270) degree = 270;
                 
                 if (degree != 0) {
                     Matrix matrix = new Matrix();
                     matrix.postRotate(degree);
-                    Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-                    if (rotatedBitmap != bitmap) {
-                        bitmap.recycle();
-                        bitmap = rotatedBitmap;
-                    }
+                    Bitmap rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+                    bitmap.recycle();
+                    bitmap = rotated;
                 }
 
-                // Strictly enforce format compatibility with OpenCV BitmapToMat algorithm
                 if (bitmap.getConfig() != Bitmap.Config.ARGB_8888) {
-                    Bitmap convertedBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true);
-                    if (convertedBitmap != bitmap) {
-                        bitmap.recycle();
-                        bitmap = convertedBitmap;
-                    }
+                    Bitmap converted = bitmap.copy(Bitmap.Config.ARGB_8888, true);
+                    bitmap.recycle();
+                    bitmap = converted;
                 }
                 
                 Mat mat = new Mat();
                 Utils.bitmapToMat(bitmap, mat);
                 
-                // Create a dummy key for testing (Question 1 = Option 0/A)
                 Map<Integer, Integer> testKey = new HashMap<>();
                 testKey.put(1, 0); 
                 
@@ -169,15 +169,14 @@ public class MainActivity extends AppCompatActivity {
                 tvResults.setText("Scan Complete.\nScore: " + score);
                 
                 mat.release();
-            } else {
-                tvResults.setText("Error: Could not decode image.");
+                bitmap.recycle();
             }
         } catch (Exception e) {
+            Log.e(TAG, "Error processing image", e);
             tvResults.setText("Error processing image: " + e.getMessage());
-            e.printStackTrace();
         } catch (Error e) {
-            tvResults.setText("System error processing image: " + e.getMessage());
-            e.printStackTrace();
+            Log.e(TAG, "Native library error", e);
+            tvResults.setText("System error (Native): " + e.getMessage());
         }
     }
 }

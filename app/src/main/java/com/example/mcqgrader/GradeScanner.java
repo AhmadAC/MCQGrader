@@ -13,11 +13,13 @@ public class GradeScanner {
     private static final int NUM_OPTIONS = 6; 
 
     public int grade(Mat img, Map<Integer, Integer> key) {
+        if (img.empty()) return 0;
+
         Mat gray = new Mat();
         Mat blurred = new Mat();
         Mat thresh = new Mat();
 
-        // Must interpret image via RGBA as Utils.bitmapToMat maps to CV_8UC4 Format
+        // BitmapToMat results in RGBA
         Imgproc.cvtColor(img, gray, Imgproc.COLOR_RGBA2GRAY);
         Imgproc.GaussianBlur(gray, blurred, new Size(5, 5), 0);
         Imgproc.threshold(blurred, thresh, 0, 255, Imgproc.THRESH_BINARY_INV | Imgproc.THRESH_OTSU);
@@ -60,8 +62,6 @@ public class GradeScanner {
                     maxPixels = total;
                     filledIndex = i;
                 }
-                
-                // Address Memory leaks
                 mask.release();
                 masked.release();
             }
@@ -71,15 +71,10 @@ public class GradeScanner {
             }
         }
 
-        // Release Mats natively to resolve leak issues entirely
         gray.release();
         blurred.release();
         thresh.release();
         hierarchy.release();
-        for (MatOfPoint cnt : contours) {
-            cnt.release();
-        }
-
         return totalScore;
     }
 }
