@@ -1,6 +1,9 @@
+}
 package com.example.mcqgrader;
 
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.util.Log;
 import androidx.annotation.NonNull;
@@ -18,6 +21,7 @@ import org.json.JSONObject;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.imgproc.Imgproc;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -42,18 +46,15 @@ public class ScannerActivity extends AppCompatActivity {
 
         previewView = findViewById(R.id.previewView);
         tvScoreOverlay = findViewById(R.id.tvScoreOverlay);
-
-        // Styling requested: Red, Size 20, Bold
-        tvScoreOverlay.setTextColor(android.graphics.Color.RED);
+        tvScoreOverlay.setTextColor(Color.RED);
         tvScoreOverlay.setTextSize(20);
-        tvScoreOverlay.setTypeface(null, android.graphics.Typeface.BOLD);
+        tvScoreOverlay.setTypeface(null, Typeface.BOLD);
 
         gradeScanner = new GradeScanner();
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        String keyJson = getIntent().getStringExtra("key_json");
+        parseKey(getIntent().getStringExtra("key_json"));
         optionsCount = getIntent().getIntExtra("options_count", 6);
-        parseKey(keyJson);
 
         startCamera();
 
@@ -102,7 +103,6 @@ public class ScannerActivity extends AppCompatActivity {
         Mat matWithStride = new Mat(image.getHeight(), plane.getRowStride(), CvType.CV_8UC1);
         matWithStride.put(0, 0, data);
 
-        // Crash Fix: Clone to prevent use-after-free
         Mat mat;
         if (plane.getRowStride() != image.getWidth()) {
             mat = matWithStride.submat(0, image.getHeight(), 0, image.getWidth()).clone();
@@ -122,17 +122,7 @@ public class ScannerActivity extends AppCompatActivity {
             tvScoreOverlay.setText(result.score + " / " + answerKey.size());
             if (result.score >= bestScore) {
                 bestScore = result.score;
-                
-                // CRASH FIX: Manually convert the map to a JSONObject so the Integer keys are safely stored as Strings
-                try {
-                    JSONObject answersObj = new JSONObject();
-                    for (Map.Entry<Integer, Integer> entry : result.studentAnswers.entrySet()) {
-                        answersObj.put(String.valueOf(entry.getKey()), entry.getValue());
-                    }
-                    bestAnswers = answersObj.toString();
-                } catch (Exception e) {
-                    Log.e("ScannerActivity", "Error constructing JSON string from student answers", e);
-                }
+                bestAnswers = new JSONObject(result.studentAnswers).toString();
             }
         });
 
